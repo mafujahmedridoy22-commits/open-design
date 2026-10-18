@@ -354,6 +354,15 @@ export async function generateMedia(args: {
   length?: number; duration?: number; voice?: string;
   audioKind?: AudioKind; language?: string; loop?: boolean; promptInfluence?: number;
   compositionDir?: string; image?: string; images?: string[]; onProgress?: ProgressFn; requestInit?: MediaRequestInit;
+  /**
+   * The project record's metadata, when the caller has it. Carries `baseDir`
+   * for imported/external projects — without it `ensureProject` falls back to
+   * `<projectsRoot>/<projectId>`, which is NOT where the project's files live,
+   * so `--image` refs and generated output resolve against the wrong root
+   * (#8789: relative refs report "not found", absolute in-project paths report
+   * "resolves outside the project directory").
+   */
+  projectMetadata?: unknown;
   desktopFrameRenderer?: DesktopFrameRenderer | null;
   workspaceId?: string;
   onProviderRequestSettled?: (summary: ImageGenerationRequestSummary & { providerId: string }) => void;
@@ -398,6 +407,7 @@ export async function generateMedia(args: {
     promptInfluence,
     compositionDir,
     image,
+    projectMetadata,
     requestInit,
     workspaceId,
     onProviderRequestSettled,
@@ -508,7 +518,9 @@ export async function generateMedia(args: {
     : durationClamp.value;
   const warnings = [lengthClamp.warning, durationClamp.warning].filter(Boolean);
 
-  const dir = await ensureProject(projectsRoot, projectId);
+  // Pass the project record's metadata so imported/external projects resolve
+  // to their real baseDir instead of a nonexistent <projectsRoot>/<id> path.
+  const dir = await ensureProject(projectsRoot, projectId, projectMetadata);
   const safeOut = sanitizeName(
     output || autoOutputName(surface, model, resolvedAudioKind),
   );
