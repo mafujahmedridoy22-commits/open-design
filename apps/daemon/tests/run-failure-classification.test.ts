@@ -117,6 +117,42 @@ function classify(
 }
 
 describe('classifyRunFailure', () => {
+  it('keeps an inactivity-watchdog kill as timeout when an MCP refresh token expired (#8098)', () => {
+    const stallMessage =
+      'Agent stalled without emitting any new output for 600s. The model or CLI likely hung while generating. ' +
+      'Phase details: spawned agent codex; stdout arrived: yes; last agent event: status:Reconnecting... 1/5; ' +
+      'largest tool result observed: 0 chars.';
+    const mcpStderr =
+      'ERROR codex_rmcp_client::oauth::refresh_transaction: error=failed to refresh OAuth tokens for server ' +
+      'wisprFlow: OAuth refresh token was rejected: Server returned error response: invalid_grant';
+
+    expect(
+      classifyRunFailure({
+        result: 'failed',
+        status: {
+          status: 'failed',
+          error: stallMessage,
+          exitCode: 1,
+          signal: null,
+          errorCode: 'AGENT_EXECUTION_FAILED',
+        },
+        errorCode: 'AGENT_EXECUTION_FAILED',
+        agentId: 'codex',
+        terminalTrigger: 'inactivity_watchdog',
+        events: [
+          { event: 'stderr', data: { text: mcpStderr } },
+          errorEvent('AGENT_EXECUTION_FAILED', stallMessage),
+        ],
+      }),
+    ).toMatchObject({
+      failure_category: 'timeout',
+      failure_detail: 'inactivity_timeout',
+      terminal_trigger: 'inactivity_watchdog',
+      retryable: true,
+      user_action: 'retry',
+    });
+  });
+
   it('keeps a blocked task non-retryable without attributing its cause to a clean child exit', () => {
     expect(classifyRunFailure({
       result: 'failed',
