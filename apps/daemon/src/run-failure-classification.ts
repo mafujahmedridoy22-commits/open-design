@@ -1069,6 +1069,31 @@ function classifyRunFailureBase(
   // signal guard below (a watchdog kill IS a signal, and the reason it was
   // killed outranks the bare signal) and the timeout branch itself.
   const daemonTimeoutVerdict = hasDaemonTimeoutVerdict(events);
+  // #8098: the daemon's own watchdog verdict is structural evidence — the
+  // daemon killed the run for stalling — so it outranks leftover stderr text
+  // (e.g. an expired MCP OAuth refresh-token line) that auth heuristics below
+  // would otherwise read as the agent's own missing credential. Explicit
+  // structured auth codes still win: they are checked by the named-code
+  // branches before this guard runs.
+  const watchdogTimeoutText = isTimeoutText(text) || daemonTimeoutVerdict;
+  if (
+    watchdogTimeoutText &&
+    (input.terminalTrigger === 'inactivity_watchdog' ||
+      (!input.terminalTrigger && /inactivity|stalled|hung|no new output|without emitting any new output/i.test(text))) &&
+    !['AGENT_AUTH_REQUIRED', 'AMR_AUTH_REQUIRED', 'UNAUTHORIZED'].includes(errorCode ?? '')
+  ) {
+    const retryable = retryableHint ?? true;
+    return {
+      ...classification(
+        'timeout',
+        'inactivity_timeout',
+        inferFailureStageFromEvents(events, 'first_token_wait'),
+        retryable,
+        retryable ? 'retry' : 'none',
+      ),
+      terminal_trigger: 'inactivity_watchdog',
+    };
+  }
   if (input.agentId === 'amr' && events.some((event) => {
     if (event.event !== 'error') return false;
     const data = asObject(event.data);
